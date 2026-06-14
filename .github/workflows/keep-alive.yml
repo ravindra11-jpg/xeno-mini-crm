@@ -1,0 +1,12 @@
+name: Keep Render services alive
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping crm-backend
+        run: curl https://xeno-mini-crm-backend-hyr6.onrender.com/health
+      - name: Ping channel-service
+        run: curl https://xeno-channel-service-fpgo.onrender.com/health
