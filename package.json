@@ -1,0 +1,15 @@
+{
+  "name": "xeno-mini-crm",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "frontend",
+    "crm-backend",
+    "channel-service"
+  ],
+  "scripts": {
+    "dev:crm": "npm run dev --workspace=crm-backend",
+    "dev:channel": "npm run dev --workspace=channel-service",
+    "dev:frontend": "npm run dev --workspace=frontend"
+  }
+}

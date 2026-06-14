@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/main.tsx","./src/components/layout.tsx","./src/components/statcard.tsx","./src/lib/api.ts","./src/lib/utils.ts","./src/pages/campaigns.tsx","./src/pages/dashboard.tsx","./src/pages/segments.tsx"],"errors":true,"version":"6.0.3"}
