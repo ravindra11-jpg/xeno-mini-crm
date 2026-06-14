@@ -52,7 +52,7 @@ type Segment = {
 }
 type AgentPlan = {
   segmentName: string; segmentDescription: string; rules: Rule[]
-  matchedExistingSegment: string | null; channel: string
+  channel: string
   messageTemplate: string; reasoning: string
 }
 type WizardData = {
@@ -626,9 +626,6 @@ function SegmentPickerStep({ segList, segmentId, campaignName, purpose, onSelect
   const [previewCount, setPreviewCount]     = useState<number | null>(null)
   const [saving, setSaving]           = useState(false)
   const [error, setError]             = useState<string | null>(null)
-  const [recommendedId, setRecommendedId] = useState<string | null>(null)
-  const [recommendationLoading, setRecommendationLoading] = useState(false)
-  const [recommendationError, setRecommendationError] = useState<string | null>(null)
   const queryClient = useQueryClient()
 
   const handleGenerate = async () => {
@@ -658,65 +655,26 @@ function SegmentPickerStep({ segList, segmentId, campaignName, purpose, onSelect
     finally { setSaving(false) }
   }
 
-  useEffect(() => {
-    if (!campaignName.trim() && !purpose.trim()) return
-    if (segList.length === 0) return
-
-    setRecommendationLoading(true)
-    setRecommendationError(null)
-    const prompt = `${campaignName.trim()}${campaignName.trim() && purpose.trim() ? '. ' : ''}${purpose.trim()}`
-
-    aiAgent(prompt)
-      .then(res => {
-        const matchedName = res.plan?.matchedExistingSegment
-        if (matchedName) {
-          const matchedSeg = segList.find(s => s.name.toLowerCase() === matchedName.toLowerCase())
-          if (matchedSeg) setRecommendedId(matchedSeg.id)
-        }
-      })
-      .catch(() => {
-        setRecommendationError('Could not recommend a segment.')
-      })
-      .finally(() => setRecommendationLoading(false))
-  }, [campaignName, purpose, segList])
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.1em', color: C.slate400, fontWeight: 600 }}>Select Segment</div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-        <div style={{ fontSize: 12, color: C.slate500 }}>Pick a segment or use the recommended match.</div>
-        {recommendationLoading ? (
-          <div style={{ fontSize: 11, color: C.slate400 }}>Finding best match…</div>
-        ) : recommendedId ? (
-          <button onClick={() => {
-            const seg = segList.find(s => s.id === recommendedId)
-            if (seg) onSelect(seg)
-          }} style={{ fontSize: 11, fontWeight: 600, color: C.blue, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-            Use recommended segment
-          </button>
-        ) : recommendationError ? (
-          <span style={{ fontSize: 11, color: C.red }}>{recommendationError}</span>
-        ) : null}
+        <div style={{ fontSize: 12, color: C.slate500 }}>Pick a segment or describe a new audience.</div>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 220, overflowY: 'auto' }}>
         {segList.length === 0
           ? <div style={{ fontSize: 12, color: C.slate400 }}>No segments yet.</div>
           : segList.map(seg => {
-            const isRecommended = recommendedId === seg.id
             return (
               <button key={seg.id} onClick={() => onSelect(seg)} style={{
                 width: '100%', textAlign: 'left', padding: '10px 14px', borderRadius: 10, cursor: 'pointer',
-                border: `1px solid ${segmentId === seg.id ? C.blue : isRecommended ? C.green : C.border}`,
-                background: segmentId === seg.id ? C.blueTrack : isRecommended ? 'rgba(5,150,105,0.08)' : C.surface,
+                border: `1px solid ${segmentId === seg.id ? C.blue : C.border}`,
+                background: segmentId === seg.id ? C.blueTrack : C.surface,
                 transition: 'all 0.12s',
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: C.slate900 }}>{seg.name}</div>
-                  {isRecommended && (
-                    <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 99, background: 'rgba(5,150,105,0.16)', color: C.green, fontWeight: 700 }}>
-                      Best match
-                    </span>
-                  )}
                 </div>
                 <div style={{ fontSize: 11, color: C.slate400, marginTop: 2 }}>
                   {seg.customerCount ?? '?'} customers · {seg.rules.length === 0 ? 'No filters' : `${seg.rules.length} rule${seg.rules.length !== 1 ? 's' : ''}`}
@@ -889,31 +847,22 @@ function AgentSegmentStep({ plan, segList, selectedSegmentId, onSelectExisting, 
   plan: AgentPlan; segList: Segment[]; selectedSegmentId: string | 'generated'
   onSelectExisting: (seg: Segment) => void; onSelectGenerated: () => void
 }) {
-  const matched = plan.matchedExistingSegment
-    ? segList.find(s => s.name.toLowerCase() === plan.matchedExistingSegment?.toLowerCase()) : null
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'rgba(255,255,255,0.6)', fontWeight: 600 }}>Choose an audience</div>
       {segList.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 176, overflowY: 'auto' }}>
           {segList.map(seg => {
-            const isMatch    = matched?.id === seg.id
             const isSelected = selectedSegmentId === seg.id
             return (
               <button key={seg.id} onClick={() => onSelectExisting(seg)} style={{
                 width: '100%', textAlign: 'left', padding: '10px 14px', borderRadius: 10, cursor: 'pointer',
                 border: `1px solid ${isSelected ? '#fff' : 'rgba(255,255,255,0.2)'}`,
-                background: isSelected ? 'rgba(255,255,255,0.18)' : isMatch ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.04)',
+                background: isSelected ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.04)',
                 transition: 'all 0.12s',
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>{seg.name}</div>
-                  {isMatch && (
-                    <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 99, fontWeight: 600, background: 'rgba(255,255,255,0.2)', color: '#fff', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                      <CheckCircle2 size={9} /> Best match
-                    </span>
-                  )}
                 </div>
                 <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', marginTop: 2 }}>
                   {seg.customerCount ?? '?'} customers · {seg.rules.length === 0 ? 'No filters' : `${seg.rules.length} rule${seg.rules.length !== 1 ? 's' : ''}`}
@@ -1082,9 +1031,7 @@ function NewCampaignWizard({ onClose, onCreated }: { onClose: () => void; onCrea
       const res = await aiAgent(data.purpose)
       if (res.plan) {
         setAgentPlan(res.plan)
-        const matched = res.plan.matchedExistingSegment
-          ? segList.find(s => s.name.toLowerCase() === res.plan.matchedExistingSegment?.toLowerCase()) : null
-        setAgentSelectedSegmentId(matched ? matched.id : '')
+        setAgentSelectedSegmentId('')
         setStep(2)
       } else { setAgentError(res.error || 'Failed to generate a campaign plan') }
     } catch (err: any) { setAgentError(err?.response?.data?.error ?? 'Failed') }
