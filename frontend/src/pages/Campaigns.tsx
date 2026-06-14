@@ -9,7 +9,7 @@ import {
   Loader2, Plus, Sparkles, Send, ChevronRight, ChevronLeft,
   X, Bot, CheckCircle2, Mail, MessageSquare, Phone,
   BarChart2, Activity, Radio, Users, Calendar,
-  TrendingUp, MousePointerClick, PackageCheck, XCircle,
+  TrendingUp, MousePointerClick, PackageCheck, XCircle, AlertTriangle,
 } from 'lucide-react'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 
@@ -52,7 +52,7 @@ type Segment = {
 }
 type AgentPlan = {
   segmentName: string; segmentDescription: string; rules: Rule[]
-  channel: string
+  matchedExistingSegment: string | null; channel: string
   messageTemplate: string; reasoning: string
 }
 type WizardData = {
@@ -159,6 +159,22 @@ function RulePillList({ rules, tinted }: { rules: Rule[]; tinted?: boolean }) {
           </span>
         )
       })}
+    </div>
+  )
+}
+
+// ─── Zero count warning ───────────────────────────────────────────────────────
+function ZeroCountWarning({ tinted, message }: { tinted?: boolean; message: string }) {
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'flex-start', gap: 8,
+      padding: '10px 14px', borderRadius: 10, fontSize: 12, lineHeight: 1.6,
+      background: tinted ? 'rgba(220,38,38,0.18)' : 'rgba(220,38,38,0.06)',
+      border: `1px solid ${tinted ? 'rgba(220,38,38,0.35)' : 'rgba(220,38,38,0.15)'}`,
+      color: tinted ? '#FCA5A5' : C.red,
+    }}>
+      <AlertTriangle size={13} style={{ flexShrink: 0, marginTop: 1 }} />
+      <span>{message}</span>
     </div>
   )
 }
@@ -539,7 +555,7 @@ function SummaryStrip({ campaigns }: { campaigns: any[] }) {
       {cells.map((cell) => (
         <div key={cell.label} style={{
           minHeight: 108, borderRadius: 20,
-          background: cell.bg, border: `1px solid ${cell.bg === C.blueBg ? 'rgba(27,110,243,0.16)' : cell.bg === C.amberBg ? 'rgba(180,83,9,0.16)' : 'rgba(5,150,105,0.16)' }`, 
+          background: cell.bg, border: `1px solid ${cell.bg === C.blueBg ? 'rgba(27,110,243,0.16)' : cell.bg === C.amberBg ? 'rgba(180,83,9,0.16)' : 'rgba(5,150,105,0.16)' }`,
           boxShadow: '0 10px 24px rgba(15,23,42,0.05)', overflow: 'hidden',
           padding: '18px 18px 16px 18px', display: 'flex', flexDirection: 'column', gap: 10,
         }}>
@@ -618,7 +634,7 @@ function SectionHeader({ label, count, sort, onSort }: { label: string; count: n
 }
 
 // ─── Wizard sub-components ────────────────────────────────────────────────────
-function SegmentPickerStep({ segList, segmentId, onSelect }: { segList: Segment[]; segmentId: string; campaignName: string; purpose: string; onSelect: (seg: Segment) => void }) {
+function SegmentPickerStep({ segList, segmentId, campaignName, purpose, onSelect }: { segList: Segment[]; segmentId: string; campaignName: string; purpose: string; onSelect: (seg: Segment) => void }) {
   const [showBuilder, setShowBuilder] = useState(false)
   const [aiPrompt, setAiPrompt]       = useState('')
   const [aiLoading, setAiLoading]     = useState(false)
@@ -626,7 +642,14 @@ function SegmentPickerStep({ segList, segmentId, onSelect }: { segList: Segment[
   const [previewCount, setPreviewCount]     = useState<number | null>(null)
   const [saving, setSaving]           = useState(false)
   const [error, setError]             = useState<string | null>(null)
+  const [recommendedId, setRecommendedId] = useState<string | null>(null)
+  const [recommendationLoading, setRecommendationLoading] = useState(false)
+  const [recommendationError, setRecommendationError] = useState<string | null>(null)
   const queryClient = useQueryClient()
+
+  // selected segment customer count
+  const selectedSeg = segList.find(s => s.id === segmentId)
+  const selectedCount = selectedSeg?.customerCount ?? null
 
   const handleGenerate = async () => {
     if (!aiPrompt.trim()) return
@@ -655,26 +678,75 @@ function SegmentPickerStep({ segList, segmentId, onSelect }: { segList: Segment[
     finally { setSaving(false) }
   }
 
+  useEffect(() => {
+    if (!campaignName.trim() && !purpose.trim()) return
+    if (segList.length === 0) return
+
+    setRecommendationLoading(true)
+    setRecommendationError(null)
+    const prompt = `${campaignName.trim()}${campaignName.trim() && purpose.trim() ? '. ' : ''}${purpose.trim()}`
+
+    aiAgent(prompt)
+      .then(res => {
+        const matchedName = res.plan?.matchedExistingSegment
+        if (matchedName) {
+          const matchedSeg = segList.find(s => s.name.toLowerCase() === matchedName.toLowerCase())
+          if (matchedSeg) setRecommendedId(matchedSeg.id)
+        }
+      })
+      .catch(() => {
+        setRecommendationError('Could not recommend a segment.')
+      })
+      .finally(() => setRecommendationLoading(false))
+  }, [campaignName, purpose, segList])
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.1em', color: C.slate400, fontWeight: 600 }}>Select Segment</div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-        <div style={{ fontSize: 12, color: C.slate500 }}>Pick a segment or describe a new audience.</div>
+        <div style={{ fontSize: 12, color: C.slate500 }}>Pick a segment or use the recommended match.</div>
+        {recommendationLoading ? (
+          <div style={{ fontSize: 11, color: C.slate400 }}>Finding best match…</div>
+        ) : recommendedId ? (
+          <button onClick={() => {
+            const seg = segList.find(s => s.id === recommendedId)
+            if (seg) onSelect(seg)
+          }} style={{ fontSize: 11, fontWeight: 600, color: C.blue, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+            Use recommended segment
+          </button>
+        ) : recommendationError ? (
+          <span style={{ fontSize: 11, color: C.red }}>{recommendationError}</span>
+        ) : null}
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 220, overflowY: 'auto' }}>
         {segList.length === 0
           ? <div style={{ fontSize: 12, color: C.slate400 }}>No segments yet.</div>
           : segList.map(seg => {
+            const isRecommended = recommendedId === seg.id
+            const isSelected    = segmentId === seg.id
+            const hasNoCustomers = (seg.customerCount ?? 0) === 0
             return (
               <button key={seg.id} onClick={() => onSelect(seg)} style={{
                 width: '100%', textAlign: 'left', padding: '10px 14px', borderRadius: 10, cursor: 'pointer',
-                border: `1px solid ${segmentId === seg.id ? C.blue : C.border}`,
-                background: segmentId === seg.id ? C.blueTrack : C.surface,
+                border: `1px solid ${isSelected ? C.blue : isRecommended ? C.green : C.border}`,
+                background: isSelected ? C.blueTrack : isRecommended ? 'rgba(5,150,105,0.08)' : C.surface,
                 transition: 'all 0.12s',
+                opacity: hasNoCustomers ? 0.6 : 1,
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: C.slate900 }}>{seg.name}</div>
+                  <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
+                    {hasNoCustomers && (
+                      <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 99, background: 'rgba(220,38,38,0.1)', color: C.red, fontWeight: 600 }}>
+                        0 customers
+                      </span>
+                    )}
+                    {isRecommended && (
+                      <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 99, background: 'rgba(5,150,105,0.16)', color: C.green, fontWeight: 700 }}>
+                        Best match
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <div style={{ fontSize: 11, color: C.slate400, marginTop: 2 }}>
                   {seg.customerCount ?? '?'} customers · {seg.rules.length === 0 ? 'No filters' : `${seg.rules.length} rule${seg.rules.length !== 1 ? 's' : ''}`}
@@ -684,6 +756,12 @@ function SegmentPickerStep({ segList, segmentId, onSelect }: { segList: Segment[
           })
         }
       </div>
+
+      {/* Zero-count warning for selected segment */}
+      {segmentId && selectedCount === 0 && (
+        <ZeroCountWarning message="This segment has 0 customers. Select a different segment, or describe a new audience using the AI builder below." />
+      )}
+
       {!showBuilder ? (
         <button onClick={() => setShowBuilder(true)} style={{
           display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 600,
@@ -695,6 +773,9 @@ function SegmentPickerStep({ segList, segmentId, onSelect }: { segList: Segment[
         <div style={{ background: C.blueTrack, border: `1px solid rgba(27,110,243,0.15)`, borderRadius: 12, padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div style={{ fontSize: 11, fontWeight: 600, color: C.blue, display: 'flex', alignItems: 'center', gap: 5 }}>
             <Sparkles size={11} /> Describe in plain English
+          </div>
+          <div style={{ fontSize: 11, color: C.slate500, lineHeight: 1.5 }}>
+            Be specific — mention city, spend range, days since purchase, or product category for better results.
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <input
@@ -716,9 +797,12 @@ function SegmentPickerStep({ segList, segmentId, onSelect }: { segList: Segment[
           {generatedRules && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               <RulePillList rules={generatedRules} />
-              {previewCount !== null && (
-                <span style={{ fontSize: 11, fontWeight: 700, color: previewCount === 0 ? C.red : C.blue }}>
-                  {previewCount === 0 ? '0 customers match — try a different description' : `${previewCount} customers match`}
+              {previewCount !== null && previewCount === 0 && (
+                <ZeroCountWarning message="0 customers match these rules. Try a broader description — e.g. remove a filter or widen the city/spend range." />
+              )}
+              {previewCount !== null && previewCount > 0 && (
+                <span style={{ fontSize: 11, fontWeight: 700, color: C.blue }}>
+                  {previewCount} customers match
                 </span>
               )}
               <button onClick={handleSaveAndSelect} disabled={saving || previewCount === 0} style={{
@@ -736,8 +820,8 @@ function SegmentPickerStep({ segList, segmentId, onSelect }: { segList: Segment[
   )
 }
 
-function ChannelPickerStep({ channel, campaignName, purpose, segmentDescription, onSelect }: {
-  channel: string; campaignName: string; purpose: string; segmentDescription: string; onSelect: (c: string) => void
+function ChannelPickerStep({ channel, segmentDescription, onSelect }: {
+  channel: string; campaignName?: string; purpose?: string; segmentDescription: string; onSelect: (c: string) => void
 }) {
   const [recommended, setRecommended] = useState<string | null>(null)
   const [reasoning, setReasoning]     = useState<string | null>(null)
@@ -748,7 +832,7 @@ function ChannelPickerStep({ channel, campaignName, purpose, segmentDescription,
     if (fetchedRef.current) return
     fetchedRef.current = true
     setLoading(true)
-    aiChannel(campaignName, purpose, segmentDescription)
+    aiChannel('', '', segmentDescription)
       .then(res => { if (res.channel) { setRecommended(res.channel); setReasoning(res.reasoning); onSelect(res.channel) } })
       .catch(() => {})
       .finally(() => setLoading(false))
@@ -847,22 +931,38 @@ function AgentSegmentStep({ plan, segList, selectedSegmentId, onSelectExisting, 
   plan: AgentPlan; segList: Segment[]; selectedSegmentId: string | 'generated'
   onSelectExisting: (seg: Segment) => void; onSelectGenerated: () => void
 }) {
+  const matched = plan.matchedExistingSegment
+    ? segList.find(s => s.name.toLowerCase() === plan.matchedExistingSegment?.toLowerCase()) : null
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'rgba(255,255,255,0.6)', fontWeight: 600 }}>Choose an audience</div>
       {segList.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 176, overflowY: 'auto' }}>
           {segList.map(seg => {
-            const isSelected = selectedSegmentId === seg.id
+            const isMatch       = matched?.id === seg.id
+            const isSelected    = selectedSegmentId === seg.id
+            const hasNoCustomers = (seg.customerCount ?? 0) === 0
             return (
               <button key={seg.id} onClick={() => onSelectExisting(seg)} style={{
                 width: '100%', textAlign: 'left', padding: '10px 14px', borderRadius: 10, cursor: 'pointer',
                 border: `1px solid ${isSelected ? '#fff' : 'rgba(255,255,255,0.2)'}`,
-                background: isSelected ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.04)',
+                background: isSelected ? 'rgba(255,255,255,0.18)' : isMatch ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.04)',
                 transition: 'all 0.12s',
+                opacity: hasNoCustomers ? 0.5 : 1,
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>{seg.name}</div>
+                  {isMatch && (
+                    <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 99, fontWeight: 600, background: 'rgba(255,255,255,0.2)', color: '#fff', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                      <CheckCircle2 size={9} /> Best match
+                    </span>
+                  )}
+                  {hasNoCustomers && (
+                    <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 99, background: 'rgba(220,38,38,0.3)', color: '#FCA5A5', fontWeight: 600 }}>
+                      0 customers
+                    </span>
+                  )}
                 </div>
                 <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', marginTop: 2 }}>
                   {seg.customerCount ?? '?'} customers · {seg.rules.length === 0 ? 'No filters' : `${seg.rules.length} rule${seg.rules.length !== 1 ? 's' : ''}`}
@@ -872,6 +972,12 @@ function AgentSegmentStep({ plan, segList, selectedSegmentId, onSelectExisting, 
           })}
         </div>
       )}
+
+      {/* Zero count warning for selected existing segment */}
+      {selectedSegmentId && selectedSegmentId !== 'generated' && (segList.find(s => s.id === selectedSegmentId)?.customerCount ?? 1) === 0 && (
+        <ZeroCountWarning tinted message="This segment has 0 customers. Choose a different segment or generate a new one below." />
+      )}
+
       <>
         <div style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'rgba(255,255,255,0.5)', fontWeight: 600 }}>Generate a suitable segment</div>
         <button onClick={onSelectGenerated} style={{
@@ -985,8 +1091,11 @@ function SummaryStep({ data, segmentName, customerCount, tinted, agentReasoning,
           {agentReasoning}
         </div>
       )}
-      {customerCount !== undefined && (
+      {customerCount !== undefined && customerCount > 0 && (
         <div style={{ fontSize: 11, color: labelColor }}>Will send to ~{customerCount} customers.</div>
+      )}
+      {customerCount !== undefined && customerCount === 0 && (
+        <ZeroCountWarning tinted={tinted} message="This segment has 0 customers. Go back and choose a different segment." />
       )}
     </div>
   )
@@ -1030,8 +1139,22 @@ function NewCampaignWizard({ onClose, onCreated }: { onClose: () => void; onCrea
     try {
       const res = await aiAgent(data.purpose)
       if (res.plan) {
+        // Check if generated rules match any customers
+        if (res.plan.rules && res.plan.rules.length > 0) {
+          const preview = await previewSegment(res.plan.rules)
+          const count = preview.count ?? preview.total ?? 0
+          if (count === 0 && !res.plan.matchedExistingSegment) {
+            setAgentError(
+              "The AI couldn't find customers matching your purpose. Try being more specific — mention a city (e.g. Mumbai), a spend range (e.g. over ₹10,000), or days since last purchase (e.g. 60 days)."
+            )
+            setAgentLoading(false)
+            return
+          }
+        }
         setAgentPlan(res.plan)
-        setAgentSelectedSegmentId('')
+        const matched = res.plan.matchedExistingSegment
+          ? segList.find(s => s.name.toLowerCase() === res.plan.matchedExistingSegment?.toLowerCase()) : null
+        setAgentSelectedSegmentId(matched ? matched.id : '')
         setStep(2)
       } else { setAgentError(res.error || 'Failed to generate a campaign plan') }
     } catch (err: any) { setAgentError(err?.response?.data?.error ?? 'Failed') }
@@ -1041,20 +1164,40 @@ function NewCampaignWizard({ onClose, onCreated }: { onClose: () => void; onCrea
   const handleAgentProceedToSummary = async () => {
     if (!agentPlan) return
     let finalSegmentId = '', finalSegmentDescription = '', finalCustomerCount: number | undefined
+
     if (agentSelectedSegmentId === 'generated') {
       setAgentSegmentSaving(true); setAgentError(null)
       try {
+        // Preview before saving to check count
+        const preview = await previewSegment(agentPlan.rules)
+        const count = preview.count ?? preview.total ?? 0
+        if (count === 0) {
+          setAgentError(
+            "The generated segment matches 0 customers. Go back and rephrase your purpose — try a broader city, lower spend threshold, or longer inactivity window."
+          )
+          setAgentSegmentSaving(false)
+          return
+        }
         const created = await createSegment({ name: agentPlan.segmentName, rules: agentPlan.rules })
-        finalSegmentId = created.segment.id; finalSegmentDescription = created.segment.description ?? ''
-        finalCustomerCount = created.segment.customerCount
+        finalSegmentId = created.segment.id
+        finalSegmentDescription = created.segment.description ?? ''
+        finalCustomerCount = count
         queryClient.invalidateQueries({ queryKey: ['segments'] })
       } catch (err: any) { setAgentError(err?.response?.data?.error ?? 'Failed to save segment'); setAgentSegmentSaving(false); return }
       setAgentSegmentSaving(false)
     } else {
       const existing = segList.find(s => s.id === agentSelectedSegmentId)
       if (!existing) return
-      finalSegmentId = existing.id; finalSegmentDescription = existing.description ?? ''; finalCustomerCount = existing.customerCount
+      // Block if selected existing segment has 0 customers
+      if ((existing.customerCount ?? 0) === 0) {
+        setAgentError('This segment has 0 customers. Please choose a different segment or generate a new one.')
+        return
+      }
+      finalSegmentId = existing.id
+      finalSegmentDescription = existing.description ?? ''
+      finalCustomerCount = existing.customerCount
     }
+
     setData(d => ({ ...d, segmentId: finalSegmentId, segmentDescription: finalSegmentDescription, channel: agentPlan.channel, messageTemplate: agentPlan.messageTemplate }))
     setAgentFinalCustomerCount(finalCustomerCount)
     setStep(3)
@@ -1082,7 +1225,7 @@ function NewCampaignWizard({ onClose, onCreated }: { onClose: () => void; onCrea
   const titleColor   = isAgent ? '#fff' : C.slate900
   const subtleColor  = isAgent ? 'rgba(255,255,255,0.55)' : C.slate400
   const canStep1  = !!data.name.trim() && !!data.purpose.trim()
-  const canStep2M = !!data.segmentId
+  const canStep2M = !!data.segmentId && (selectedSegment?.customerCount ?? 1) > 0
   const canStep3M = !!data.channel
 
   return (
@@ -1134,6 +1277,11 @@ function NewCampaignWizard({ onClose, onCreated }: { onClose: () => void; onCrea
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <div style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.1em', color: subtleColor, fontWeight: 600 }}>Purpose</div>
+                {isAgent && (
+                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', lineHeight: 1.5 }}>
+                    Be specific — mention city, spend range, product category, or inactivity period for better AI results.
+                  </div>
+                )}
                 <textarea
                   style={{
                     width: '100%', padding: '9px 14px', borderRadius: 10, fontSize: 13, outline: 'none',
@@ -1141,7 +1289,9 @@ function NewCampaignWizard({ onClose, onCreated }: { onClose: () => void; onCrea
                     color: titleColor, background: isAgent ? 'rgba(255,255,255,0.08)' : C.surface,
                     resize: 'none', minHeight: 72, lineHeight: 1.6, boxSizing: 'border-box',
                   }}
-                  placeholder="e.g. re-engage Chennai customers who haven't returned in 60 days"
+                  placeholder={isAgent
+                    ? "e.g. re-engage Mumbai customers who spent over ₹5,000 but haven't bought in 60 days"
+                    : "e.g. re-engage Chennai customers who haven't returned in 60 days"}
                   value={data.purpose}
                   onChange={e => setData(d => ({ ...d, purpose: e.target.value }))}
                 />
@@ -1164,19 +1314,21 @@ function NewCampaignWizard({ onClose, onCreated }: { onClose: () => void; onCrea
                   }} />
                 </div>
               </button>
-              {agentError && <div style={{ fontSize: 11, padding: '8px 12px', borderRadius: 8, background: 'rgba(220,38,38,0.12)', color: '#FCA5A5' }}>{agentError}</div>}
+              {agentError && (
+                <ZeroCountWarning tinted={isAgent} message={agentError} />
+              )}
             </>
           )}
 
           {!agentMode && step === 2 && <SegmentPickerStep segList={segList} segmentId={data.segmentId} campaignName={data.name} purpose={data.purpose} onSelect={handleSelectSegment} />}
-          {!agentMode && step === 3 && <ChannelPickerStep channel={data.channel} campaignName={data.name} purpose={data.purpose} segmentDescription={data.segmentDescription} onSelect={handleChannelSelect} />}
+          {!agentMode && step === 3 && <ChannelPickerStep channel={data.channel} segmentDescription={data.segmentDescription} onSelect={handleChannelSelect} />}
           {!agentMode && step === 4 && <MessageStep campaignName={data.name} purpose={data.purpose} segmentDescription={data.segmentDescription} messageTemplate={data.messageTemplate} onChange={handleMessageChange} />}
           {!agentMode && step === 5 && <SummaryStep data={data} segmentName={manualSegmentName} customerCount={selectedSegment?.customerCount} tinted={false} onChannelChange={handleChannelSelect} onMessageChange={handleMessageChange} />}
 
           {agentMode && step === 2 && agentPlan && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <AgentSegmentStep plan={agentPlan} segList={segList} selectedSegmentId={agentSelectedSegmentId} onSelectExisting={seg => setAgentSelectedSegmentId(seg.id)} onSelectGenerated={() => setAgentSelectedSegmentId('generated')} />
-              {agentError && <div style={{ fontSize: 11, padding: '8px 12px', borderRadius: 8, background: 'rgba(220,38,38,0.15)', color: '#FCA5A5' }}>{agentError}</div>}
+              <AgentSegmentStep plan={agentPlan} segList={segList} selectedSegmentId={agentSelectedSegmentId} onSelectExisting={seg => { setAgentSelectedSegmentId(seg.id); setAgentError(null) }} onSelectGenerated={() => { setAgentSelectedSegmentId('generated'); setAgentError(null) }} />
+              {agentError && <ZeroCountWarning tinted message={agentError} />}
             </div>
           )}
           {agentMode && step === 3 && <SummaryStep data={data} segmentName={agentSegmentName} customerCount={agentFinalCustomerCount} tinted={true} agentReasoning={agentPlan?.reasoning} onChannelChange={handleChannelSelect} onMessageChange={handleMessageChange} />}
@@ -1206,7 +1358,11 @@ function NewCampaignWizard({ onClose, onCreated }: { onClose: () => void; onCrea
             </button>
           )}
           {((!agentMode && step === 5) || (agentMode && step === 3)) && (
-            <button onClick={handleSubmit} disabled={submitting || (!agentMode && !data.messageTemplate.trim())} style={nextBtnStyle(isAgent, submitting)}>
+            <button
+              onClick={handleSubmit}
+              disabled={submitting || (!agentMode && !data.messageTemplate.trim()) || (agentFinalCustomerCount !== undefined && agentFinalCustomerCount === 0)}
+              style={nextBtnStyle(isAgent, submitting)}
+            >
               {submitting ? <><Loader2 size={13} style={{ animation: 'xeno-spin 1s linear infinite' }} />Sending…</> : <><Send size={13} />Create & Send</>}
             </button>
           )}
@@ -1257,7 +1413,7 @@ export default function Campaigns() {
 
       <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden', background: C.pageBg }}>
 
-        {/* ── Top bar — matches Segments page style ── */}
+        {/* ── Top bar ── */}
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           padding: '24px 28px 20px',
@@ -1309,33 +1465,31 @@ export default function Campaigns() {
           ) : (
             <>
               {/* Live */}
-              {(live.length > 0 || true) && (
-                <div>
-                  <SectionHeader label="Live" count={byChannel(live, liveSort).length} sort={liveSort} onSort={setLiveSort} />
-                  {byChannel(live, liveSort).length === 0 ? (
-                    <div style={{
-                      margin: '6px 0', padding: '20px', background: C.surface, borderRadius: 12,
-                      border: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', gap: 10,
-                    }}>
-                      <div style={{ width: 32, height: 32, borderRadius: 8, background: C.slate100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <Activity size={15} style={{ color: C.slate400 }} />
-                      </div>
-                      <div>
-                        <div style={{ fontSize: 12, fontWeight: 600, color: C.slate700 }}>No live campaigns</div>
-                        <div style={{ fontSize: 11, color: C.slate400 }}>
-                          {liveSort !== 'all' ? `No live ${liveSort} campaigns` : "Start a new campaign and it'll appear here."}
-                        </div>
+              <div>
+                <SectionHeader label="Live" count={byChannel(live, liveSort).length} sort={liveSort} onSort={setLiveSort} />
+                {byChannel(live, liveSort).length === 0 ? (
+                  <div style={{
+                    margin: '6px 0', padding: '20px', background: C.surface, borderRadius: 12,
+                    border: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', gap: 10,
+                  }}>
+                    <div style={{ width: 32, height: 32, borderRadius: 8, background: C.slate100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Activity size={15} style={{ color: C.slate400 }} />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: C.slate700 }}>No live campaigns</div>
+                      <div style={{ fontSize: 11, color: C.slate400 }}>
+                        {liveSort !== 'all' ? `No live ${liveSort} campaigns` : "Start a new campaign and it'll appear here."}
                       </div>
                     </div>
-                  ) : (
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12, marginTop: 6 }}>
-                      {byChannel(live, liveSort).map(c => (
-                        <CampaignCard key={c.id} campaign={c} onClick={() => setSelectedId(c.id)} />
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
+                  </div>
+                ) : (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12, marginTop: 6 }}>
+                    {byChannel(live, liveSort).map(c => (
+                      <CampaignCard key={c.id} campaign={c} onClick={() => setSelectedId(c.id)} />
+                    ))}
+                  </div>
+                )}
+              </div>
 
               {/* Completed */}
               {completed.length > 0 && (
