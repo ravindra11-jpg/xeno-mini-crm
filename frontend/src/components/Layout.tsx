@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Outlet, NavLink } from 'react-router-dom'
-import { LayoutDashboard, Megaphone, Users, ChevronLeft, ChevronRight } from 'lucide-react'
+import { LayoutDashboard, Megaphone, Users, ChevronLeft, ChevronRight, SpellCheck } from 'lucide-react'
 
 
 const nav = [
@@ -45,8 +45,9 @@ export default function Layout() {
             background: 'linear-gradient(135deg, #1B6EF3 0%, #3B82F6 100%)',
             boxShadow: '0 2px 8px rgba(27,110,243,0.35)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 13, fontWeight: 800, color: '#fff',
-          }}>A</div>
+          }}>
+            <SpellCheck size={17} color="#fff" strokeWidth={2.5} />
+          </div>
 
           {/* Text fades out when collapsed */}
           <div style={{
