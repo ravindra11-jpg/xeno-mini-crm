@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import { CampaignDetailDialog } from '@/pages/Campaigns'
 import { getAnalytics, getCampaigns, getCampaignStats } from '@/lib/api'
 import {
-  Loader2, Sparkles, ArrowRight, Mail, MessageSquare, Phone,
+  Loader2, ArrowRight, Mail, MessageSquare, Phone,
   TrendingUp, Users, Send, BarChart2, Zap,
   CheckCircle2, AlertCircle, MousePointerClick,
 } from 'lucide-react'
@@ -434,7 +434,7 @@ export default function Dashboard() {
               </Link>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 14 }}>
-              {recentCompleted.map((c, i) => (
+              {recentCompleted.map((c) => (
                 <CompletedCampaignCard key={c.id} campaign={c} onClick={() => setSelectedCampaign(c)} />
               ))}
             </div>
