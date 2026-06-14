@@ -633,8 +633,34 @@ function SectionHeader({ label, count, sort, onSort }: { label: string; count: n
   )
 }
 
+// ─── Customer count pill ──────────────────────────────────────────────────────
+function CustomerCountPill({ count, loading, tinted }: { count: number | null | undefined; loading?: boolean; tinted?: boolean }) {
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: tinted ? 'rgba(255,255,255,0.6)' : C.slate400 }}>
+        <Loader2 size={11} style={{ animation: 'xeno-spin 1s linear infinite' }} /> Counting customers…
+      </div>
+    )
+  }
+  if (count === null || count === undefined) return null
+  if (count === 0) return null // handled by ZeroCountWarning
+  return (
+    <div style={{ fontSize: 11, color: tinted ? 'rgba(255,255,255,0.7)' : C.slate500 }}>
+      Will send to{' '}
+      <span style={{ fontWeight: 700, color: tinted ? '#fff' : C.blue }}>~{count} customers</span>
+    </div>
+  )
+}
+
 // ─── Wizard sub-components ────────────────────────────────────────────────────
-function SegmentPickerStep({ segList, segmentId, campaignName, purpose, onSelect }: { segList: Segment[]; segmentId: string; campaignName: string; purpose: string; onSelect: (seg: Segment) => void }) {
+function SegmentPickerStep({ segList, segmentId, campaignName, purpose, onSelect, onCountChange }: {
+  segList: Segment[]
+  segmentId: string
+  campaignName: string
+  purpose: string
+  onSelect: (seg: Segment) => void
+  onCountChange: (count: number | null) => void
+}) {
   const [showBuilder, setShowBuilder] = useState(false)
   const [aiPrompt, setAiPrompt]       = useState('')
   const [aiLoading, setAiLoading]     = useState(false)
@@ -647,9 +673,13 @@ function SegmentPickerStep({ segList, segmentId, campaignName, purpose, onSelect
   const [recommendationError, setRecommendationError] = useState<string | null>(null)
   const queryClient = useQueryClient()
 
-  // selected segment customer count
   const selectedSeg = segList.find(s => s.id === segmentId)
   const selectedCount = selectedSeg?.customerCount ?? null
+
+  // Notify parent of current count whenever selection changes
+  useEffect(() => {
+    onCountChange(selectedCount)
+  }, [segmentId, selectedCount])
 
   const handleGenerate = async () => {
     if (!aiPrompt.trim()) return
@@ -757,9 +787,12 @@ function SegmentPickerStep({ segList, segmentId, campaignName, purpose, onSelect
         }
       </div>
 
-      {/* Zero-count warning for selected segment */}
+      {/* Zero-count warning and customer count for selected segment */}
       {segmentId && selectedCount === 0 && (
         <ZeroCountWarning message="This segment has 0 customers. Select a different segment, or describe a new audience using the AI builder below." />
+      )}
+      {segmentId && selectedCount !== null && selectedCount > 0 && (
+        <CustomerCountPill count={selectedCount} />
       )}
 
       {!showBuilder ? (
@@ -927,37 +960,42 @@ function MessageStep({ campaignName, purpose, segmentDescription, messageTemplat
   )
 }
 
-function AgentSegmentStep({ plan, segList, selectedSegmentId, onSelectExisting, onSelectGenerated }: {
-  plan: AgentPlan; segList: Segment[]; selectedSegmentId: string | 'generated'
-  onSelectExisting: (seg: Segment) => void; onSelectGenerated: () => void
+// ─── Agent step 2: segment chooser ───────────────────────────────────────────
+function AgentSegmentStep({ plan, segList, selectedSegmentId, generatedPreviewCount, onSelectExisting, onSelectGenerated }: {
+  plan: AgentPlan
+  segList: Segment[]
+  selectedSegmentId: string | 'generated'
+  generatedPreviewCount: number | undefined
+  onSelectExisting: (seg: Segment) => void
+  onSelectGenerated: () => void
 }) {
-  const matched = plan.matchedExistingSegment
-    ? segList.find(s => s.name.toLowerCase() === plan.matchedExistingSegment?.toLowerCase()) : null
+  // Compute count for whatever is currently selected
+  const selectedCount: number | undefined = selectedSegmentId === 'generated'
+    ? generatedPreviewCount
+    : segList.find(s => s.id === selectedSegmentId)?.customerCount
+
+  const isZero = selectedCount !== undefined && selectedCount === 0
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'rgba(255,255,255,0.6)', fontWeight: 600 }}>Choose an audience</div>
+
+      {/* Existing segments list */}
       {segList.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 176, overflowY: 'auto' }}>
           {segList.map(seg => {
-            const isMatch       = matched?.id === seg.id
-            const isSelected    = selectedSegmentId === seg.id
+            const isSelected = selectedSegmentId === seg.id
             const hasNoCustomers = (seg.customerCount ?? 0) === 0
             return (
               <button key={seg.id} onClick={() => onSelectExisting(seg)} style={{
                 width: '100%', textAlign: 'left', padding: '10px 14px', borderRadius: 10, cursor: 'pointer',
                 border: `1px solid ${isSelected ? '#fff' : 'rgba(255,255,255,0.2)'}`,
-                background: isSelected ? 'rgba(255,255,255,0.18)' : isMatch ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.04)',
+                background: isSelected ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.04)',
                 transition: 'all 0.12s',
                 opacity: hasNoCustomers ? 0.5 : 1,
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>{seg.name}</div>
-                  {isMatch && (
-                    <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 99, fontWeight: 600, background: 'rgba(255,255,255,0.2)', color: '#fff', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                      <CheckCircle2 size={9} /> Best match
-                    </span>
-                  )}
                   {hasNoCustomers && (
                     <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 99, background: 'rgba(220,38,38,0.3)', color: '#FCA5A5', fontWeight: 600 }}>
                       0 customers
@@ -973,35 +1011,49 @@ function AgentSegmentStep({ plan, segList, selectedSegmentId, onSelectExisting, 
         </div>
       )}
 
-      {/* Zero count warning for selected existing segment */}
-      {selectedSegmentId && selectedSegmentId !== 'generated' && (segList.find(s => s.id === selectedSegmentId)?.customerCount ?? 1) === 0 && (
-        <ZeroCountWarning tinted message="This segment has 0 customers. Choose a different segment or generate a new one below." />
-      )}
-
-      <>
-        <div style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'rgba(255,255,255,0.5)', fontWeight: 600 }}>Generate a suitable segment</div>
-        <button onClick={onSelectGenerated} style={{
-          width: '100%', textAlign: 'left', padding: '12px 14px', borderRadius: 10, cursor: 'pointer',
-          border: `1px solid ${selectedSegmentId === 'generated' ? '#fff' : 'rgba(255,255,255,0.2)'}`,
-          background: selectedSegmentId === 'generated' ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.04)',
-          transition: 'all 0.12s',
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <Sparkles size={12} style={{ color: '#fff' }} />
-            <div style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>Generate a suitable segment</div>
+      {/* Generate segment option */}
+      <div style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'rgba(255,255,255,0.5)', fontWeight: 600 }}>
+        Generate a suitable segment
+      </div>
+      <button onClick={onSelectGenerated} style={{
+        width: '100%', textAlign: 'left', padding: '12px 14px', borderRadius: 10, cursor: 'pointer',
+        border: `1px solid ${selectedSegmentId === 'generated' ? '#fff' : 'rgba(255,255,255,0.2)'}`,
+        background: selectedSegmentId === 'generated' ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.04)',
+        transition: 'all 0.12s',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <Sparkles size={12} style={{ color: '#fff' }} />
+          <div style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>Generate a suitable segment</div>
+        </div>
+        {selectedSegmentId !== 'generated' ? (
+          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', lineHeight: 1.5, marginTop: 8 }}>
+            Click to use AI to generate a matching segment for this campaign.
           </div>
-          {!selectedSegmentId || selectedSegmentId !== 'generated' ? (
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', lineHeight: 1.5, marginTop: 8 }}>
-              Click to use AI to generate a matching segment for this campaign.
-            </div>
-          ) : (
-            <div style={{ marginTop: 10 }}>
-              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', lineHeight: 1.5, marginBottom: 8 }}>{plan.segmentDescription}</div>
-              <RulePillList rules={plan.rules} tinted />
-            </div>
+        ) : (
+          <div style={{ marginTop: 10 }}>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', lineHeight: 1.5, marginBottom: 8 }}>{plan.segmentDescription}</div>
+            <RulePillList rules={plan.rules} tinted />
+          </div>
+        )}
+      </button>
+
+      {/* Customer count / zero warning — shown whenever something is selected */}
+      {selectedSegmentId && (
+        <div>
+          {isZero ? (
+            <ZeroCountWarning
+              tinted
+              message={
+                selectedSegmentId === 'generated'
+                  ? "The generated segment matches 0 customers. Go back and rephrase your purpose — try a broader city, lower spend threshold, or longer inactivity window."
+                  : "This segment has 0 customers. Choose a different segment or generate a new one."
+              }
+            />
+          ) : selectedCount !== undefined && (
+            <CustomerCountPill count={selectedCount} tinted />
           )}
-        </button>
-      </>
+        </div>
+      )}
     </div>
   )
 }
@@ -1094,9 +1146,6 @@ function SummaryStep({ data, segmentName, customerCount, tinted, agentReasoning,
       {customerCount !== undefined && customerCount > 0 && (
         <div style={{ fontSize: 11, color: labelColor }}>Will send to ~{customerCount} customers.</div>
       )}
-      {customerCount !== undefined && customerCount === 0 && (
-        <ZeroCountWarning tinted={tinted} message="This segment has 0 customers. Go back and choose a different segment." />
-      )}
     </div>
   )
 }
@@ -1118,9 +1167,11 @@ function NewCampaignWizard({ onClose, onCreated }: { onClose: () => void; onCrea
   const [agentLoading, setAgentLoading]   = useState(false)
   const [agentPlan, setAgentPlan]         = useState<AgentPlan | null>(null)
   const [agentSelectedSegmentId, setAgentSelectedSegmentId] = useState<string | 'generated'>('')
+  const [agentGeneratedPreviewCount, setAgentGeneratedPreviewCount] = useState<number | undefined>(undefined)
   const [agentError, setAgentError]       = useState<string | null>(null)
   const [agentSegmentSaving, setAgentSegmentSaving] = useState(false)
   const [agentFinalCustomerCount, setAgentFinalCustomerCount] = useState<number | undefined>(undefined)
+  const [manualSegmentCount, setManualSegmentCount] = useState<number | null>(null)
   const [submitting, setSubmitting]       = useState(false)
 
   const queryClient = useQueryClient()
@@ -1129,76 +1180,89 @@ function NewCampaignWizard({ onClose, onCreated }: { onClose: () => void; onCrea
   const segList: Segment[] = segments || []
   const selectedSegment = segList.find(s => s.id === data.segmentId)
 
-  const handleSelectSegment = (seg: Segment) => setData(d => ({ ...d, segmentId: seg.id, segmentDescription: seg.description ?? '' }))
+  const handleSelectSegment = (seg: Segment) => {
+    setData(d => ({ ...d, segmentId: seg.id, segmentDescription: seg.description ?? '' }))
+    setManualSegmentCount(seg.customerCount ?? null)
+  }
   const handleChannelSelect  = (channel: string) => setData(d => ({ ...d, channel }))
   const handleMessageChange  = (messageTemplate: string) => setData(d => ({ ...d, messageTemplate }))
 
+  // ── Agent: step 1 → 2 (no pre-validation, just plan and go) ──────────────
   const handleAgentPlan = async () => {
-    if (!data.purpose.trim()) return
+    if (!data.name.trim() || !data.purpose.trim()) return
     setAgentLoading(true); setAgentError(null)
     try {
       const res = await aiAgent(data.purpose)
       if (res.plan) {
-        // Check if generated rules match any customers
-        if (res.plan.rules && res.plan.rules.length > 0) {
-          const preview = await previewSegment(res.plan.rules)
-          const count = preview.count ?? preview.total ?? 0
-          if (count === 0 && !res.plan.matchedExistingSegment) {
-            setAgentError(
-              "The AI couldn't find customers matching your purpose. Try being more specific — mention a city (e.g. Mumbai), a spend range (e.g. over ₹10,000), or days since last purchase (e.g. 60 days)."
-            )
-            setAgentLoading(false)
-            return
-          }
-        }
         setAgentPlan(res.plan)
+        // pre-select best match if one exists, otherwise nothing selected
         const matched = res.plan.matchedExistingSegment
-          ? segList.find(s => s.name.toLowerCase() === res.plan.matchedExistingSegment?.toLowerCase()) : null
+          ? segList.find(s => s.name.toLowerCase() === res.plan.matchedExistingSegment?.toLowerCase())
+          : null
         setAgentSelectedSegmentId(matched ? matched.id : '')
+
+        // fetch preview count for the generated rules so step 2 can show it immediately
+        try {
+          const preview = await previewSegment(res.plan.rules)
+          setAgentGeneratedPreviewCount(preview.count ?? preview.total ?? 0)
+        } catch {
+          setAgentGeneratedPreviewCount(undefined)
+        }
+
         setStep(2)
-      } else { setAgentError(res.error || 'Failed to generate a campaign plan') }
-    } catch (err: any) { setAgentError(err?.response?.data?.error ?? 'Failed') }
-    finally { setAgentLoading(false) }
+      } else {
+        setAgentError(res.error || 'Failed to generate a campaign plan')
+      }
+    } catch (err: any) {
+      setAgentError(err?.response?.data?.error ?? 'Failed')
+    } finally {
+      setAgentLoading(false)
+    }
   }
 
+  // ── Agent: step 2 → 3 (validate count here, save segment, proceed) ───────
   const handleAgentProceedToSummary = async () => {
-    if (!agentPlan) return
+    if (!agentPlan || !agentSelectedSegmentId) return
+
+    // Derive count for the current selection
+    const currentCount = agentSelectedSegmentId === 'generated'
+      ? agentGeneratedPreviewCount
+      : segList.find(s => s.id === agentSelectedSegmentId)?.customerCount
+
+    // Block if 0
+    if (currentCount !== undefined && currentCount === 0) return // button already disabled
+
     let finalSegmentId = '', finalSegmentDescription = '', finalCustomerCount: number | undefined
 
     if (agentSelectedSegmentId === 'generated') {
       setAgentSegmentSaving(true); setAgentError(null)
       try {
-        // Preview before saving to check count
-        const preview = await previewSegment(agentPlan.rules)
-        const count = preview.count ?? preview.total ?? 0
-        if (count === 0) {
-          setAgentError(
-            "The generated segment matches 0 customers. Go back and rephrase your purpose — try a broader city, lower spend threshold, or longer inactivity window."
-          )
-          setAgentSegmentSaving(false)
-          return
-        }
         const created = await createSegment({ name: agentPlan.segmentName, rules: agentPlan.rules })
         finalSegmentId = created.segment.id
         finalSegmentDescription = created.segment.description ?? ''
-        finalCustomerCount = count
+        finalCustomerCount = agentGeneratedPreviewCount
         queryClient.invalidateQueries({ queryKey: ['segments'] })
-      } catch (err: any) { setAgentError(err?.response?.data?.error ?? 'Failed to save segment'); setAgentSegmentSaving(false); return }
+      } catch (err: any) {
+        setAgentError(err?.response?.data?.error ?? 'Failed to save segment')
+        setAgentSegmentSaving(false)
+        return
+      }
       setAgentSegmentSaving(false)
     } else {
       const existing = segList.find(s => s.id === agentSelectedSegmentId)
       if (!existing) return
-      // Block if selected existing segment has 0 customers
-      if ((existing.customerCount ?? 0) === 0) {
-        setAgentError('This segment has 0 customers. Please choose a different segment or generate a new one.')
-        return
-      }
       finalSegmentId = existing.id
       finalSegmentDescription = existing.description ?? ''
       finalCustomerCount = existing.customerCount
     }
 
-    setData(d => ({ ...d, segmentId: finalSegmentId, segmentDescription: finalSegmentDescription, channel: agentPlan.channel, messageTemplate: agentPlan.messageTemplate }))
+    setData(d => ({
+      ...d,
+      segmentId: finalSegmentId,
+      segmentDescription: finalSegmentDescription,
+      channel: agentPlan.channel,
+      messageTemplate: agentPlan.messageTemplate,
+    }))
     setAgentFinalCustomerCount(finalCustomerCount)
     setStep(3)
   }
@@ -1217,7 +1281,18 @@ function NewCampaignWizard({ onClose, onCreated }: { onClose: () => void; onCrea
   const totalSteps = agentMode ? 3 : 5
   const manualSegmentName = selectedSegment?.name || 'None selected'
   const agentSegmentName  = agentSelectedSegmentId === 'generated'
-    ? agentPlan?.segmentName || '' : segList.find(s => s.id === agentSelectedSegmentId)?.name || ''
+    ? agentPlan?.segmentName || ''
+    : segList.find(s => s.id === agentSelectedSegmentId)?.name || ''
+
+  // Compute whether agent step 2 "Next" should be disabled
+  const agentStep2SelectedCount = agentSelectedSegmentId === 'generated'
+    ? agentGeneratedPreviewCount
+    : segList.find(s => s.id === agentSelectedSegmentId)?.customerCount
+  const agentStep2Blocked = !agentSelectedSegmentId || agentSegmentSaving || (agentStep2SelectedCount !== undefined && agentStep2SelectedCount === 0)
+
+  // Manual step 2 next button: need a segment with >0 customers
+  const manualStep2Count = selectedSegment?.customerCount ?? manualSegmentCount ?? null
+  const canStep2M = !!data.segmentId && (manualStep2Count === null || manualStep2Count > 0)
 
   const isAgent      = agentMode
   const containerBg  = isAgent ? 'linear-gradient(145deg, #1B6EF3 0%, #0F172A 100%)' : C.surface
@@ -1225,7 +1300,6 @@ function NewCampaignWizard({ onClose, onCreated }: { onClose: () => void; onCrea
   const titleColor   = isAgent ? '#fff' : C.slate900
   const subtleColor  = isAgent ? 'rgba(255,255,255,0.55)' : C.slate400
   const canStep1  = !!data.name.trim() && !!data.purpose.trim()
-  const canStep2M = !!data.segmentId && (selectedSegment?.customerCount ?? 1) > 0
   const canStep3M = !!data.channel
 
   return (
@@ -1260,6 +1334,7 @@ function NewCampaignWizard({ onClose, onCreated }: { onClose: () => void; onCrea
         </div>
 
         <div style={{ padding: '18px 22px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {/* ── Step 1: name + purpose + mode toggle ── */}
           {step === 1 && (
             <>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -1314,26 +1389,60 @@ function NewCampaignWizard({ onClose, onCreated }: { onClose: () => void; onCrea
                   }} />
                 </div>
               </button>
-              {agentError && (
-                <ZeroCountWarning tinted={isAgent} message={agentError} />
+              {/* Only show agent error on step 1 for non-network errors (plan parse failures etc) */}
+              {agentError && step === 1 && (
+                <div style={{ fontSize: 11, padding: '8px 12px', borderRadius: 8, background: 'rgba(220,38,38,0.12)', color: '#FCA5A5' }}>
+                  {agentError}
+                </div>
               )}
             </>
           )}
 
-          {!agentMode && step === 2 && <SegmentPickerStep segList={segList} segmentId={data.segmentId} campaignName={data.name} purpose={data.purpose} onSelect={handleSelectSegment} />}
+          {/* ── Manual steps ── */}
+          {!agentMode && step === 2 && (
+            <SegmentPickerStep
+              segList={segList}
+              segmentId={data.segmentId}
+              campaignName={data.name}
+              purpose={data.purpose}
+              onSelect={handleSelectSegment}
+              onCountChange={count => setManualSegmentCount(count)}
+            />
+          )}
           {!agentMode && step === 3 && <ChannelPickerStep channel={data.channel} segmentDescription={data.segmentDescription} onSelect={handleChannelSelect} />}
           {!agentMode && step === 4 && <MessageStep campaignName={data.name} purpose={data.purpose} segmentDescription={data.segmentDescription} messageTemplate={data.messageTemplate} onChange={handleMessageChange} />}
           {!agentMode && step === 5 && <SummaryStep data={data} segmentName={manualSegmentName} customerCount={selectedSegment?.customerCount} tinted={false} onChannelChange={handleChannelSelect} onMessageChange={handleMessageChange} />}
 
+          {/* ── Agent steps ── */}
           {agentMode && step === 2 && agentPlan && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <AgentSegmentStep plan={agentPlan} segList={segList} selectedSegmentId={agentSelectedSegmentId} onSelectExisting={seg => { setAgentSelectedSegmentId(seg.id); setAgentError(null) }} onSelectGenerated={() => { setAgentSelectedSegmentId('generated'); setAgentError(null) }} />
-              {agentError && <ZeroCountWarning tinted message={agentError} />}
+              <AgentSegmentStep
+                plan={agentPlan}
+                segList={segList}
+                selectedSegmentId={agentSelectedSegmentId}
+                generatedPreviewCount={agentGeneratedPreviewCount}
+                onSelectExisting={seg => { setAgentSelectedSegmentId(seg.id); setAgentError(null) }}
+                onSelectGenerated={() => { setAgentSelectedSegmentId('generated'); setAgentError(null) }}
+              />
+              {agentError && step === 2 && (
+                <ZeroCountWarning tinted message={agentError} />
+              )}
             </div>
           )}
-          {agentMode && step === 3 && <SummaryStep data={data} segmentName={agentSegmentName} customerCount={agentFinalCustomerCount} tinted={true} agentReasoning={agentPlan?.reasoning} onChannelChange={handleChannelSelect} onMessageChange={handleMessageChange} />}
+          {agentMode && step === 3 && (
+            <SummaryStep
+              data={data}
+              segmentName={agentSegmentName}
+              customerCount={agentFinalCustomerCount}
+              tinted
+              agentReasoning={agentPlan?.reasoning}
+              onChannelChange={handleChannelSelect}
+              onMessageChange={handleMessageChange}
+            />
+          )}
         </div>
 
+        {/* ── Footer nav ── */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 22px', borderTop: headerBorder }}>
           <button onClick={() => step === 1 ? onClose() : setStep(s => s - 1)} style={{
             display: 'flex', alignItems: 'center', gap: 4, fontSize: 13, fontWeight: 500,
@@ -1343,27 +1452,61 @@ function NewCampaignWizard({ onClose, onCreated }: { onClose: () => void; onCrea
             {step === 1 ? 'Cancel' : 'Back'}
           </button>
 
-          {step === 1 && !agentMode && <button onClick={() => setStep(2)} disabled={!canStep1} style={nextBtnStyle(false, !canStep1)}>Next <ChevronRight size={14} /></button>}
+          {/* Step 1 buttons */}
+          {step === 1 && !agentMode && (
+            <button onClick={() => setStep(2)} disabled={!canStep1} style={nextBtnStyle(false, !canStep1)}>
+              Next <ChevronRight size={14} />
+            </button>
+          )}
           {step === 1 && agentMode && (
             <button onClick={handleAgentPlan} disabled={!canStep1 || agentLoading} style={nextBtnStyle(true, !canStep1 || agentLoading)}>
-              {agentLoading ? <><Loader2 size={13} style={{ animation: 'xeno-spin 1s linear infinite' }} />Planning…</> : <><Bot size={13} />Generate Plan</>}
+              {agentLoading
+                ? <><Loader2 size={13} style={{ animation: 'xeno-spin 1s linear infinite' }} />Planning…</>
+                : <><Bot size={13} />Generate Plan</>}
             </button>
           )}
-          {!agentMode && step === 2 && <button onClick={() => setStep(3)} disabled={!canStep2M} style={nextBtnStyle(false, !canStep2M)}>Next <ChevronRight size={14} /></button>}
-          {!agentMode && step === 3 && <button onClick={() => setStep(4)} disabled={!canStep3M} style={nextBtnStyle(false, !canStep3M)}>Next <ChevronRight size={14} /></button>}
-          {!agentMode && step === 4 && <button onClick={() => setStep(5)} disabled={!data.messageTemplate.trim()} style={nextBtnStyle(false, !data.messageTemplate.trim())}>Next <ChevronRight size={14} /></button>}
+
+          {/* Manual step buttons */}
+          {!agentMode && step === 2 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {manualStep2Count === 0 && data.segmentId && (
+                <span style={{ fontSize: 11, color: C.red, fontWeight: 600 }}>0 customers in this segment</span>
+              )}
+              <button onClick={() => setStep(3)} disabled={!canStep2M} style={nextBtnStyle(false, !canStep2M)}>
+                Next <ChevronRight size={14} />
+              </button>
+            </div>
+          )}
+          {!agentMode && step === 3 && (
+            <button onClick={() => setStep(4)} disabled={!canStep3M} style={nextBtnStyle(false, !canStep3M)}>
+              Next <ChevronRight size={14} />
+            </button>
+          )}
+          {!agentMode && step === 4 && (
+            <button onClick={() => setStep(5)} disabled={!data.messageTemplate.trim()} style={nextBtnStyle(false, !data.messageTemplate.trim())}>
+              Next <ChevronRight size={14} />
+            </button>
+          )}
+
+          {/* Agent step 2 button */}
           {agentMode && step === 2 && (
-            <button onClick={handleAgentProceedToSummary} disabled={agentSegmentSaving || !agentSelectedSegmentId} style={nextBtnStyle(true, agentSegmentSaving || !agentSelectedSegmentId)}>
-              {agentSegmentSaving ? <><Loader2 size={13} style={{ animation: 'xeno-spin 1s linear infinite' }} />Saving…</> : <>Next <ChevronRight size={14} /></>}
+            <button onClick={handleAgentProceedToSummary} disabled={agentStep2Blocked} style={nextBtnStyle(true, agentStep2Blocked)}>
+              {agentSegmentSaving
+                ? <><Loader2 size={13} style={{ animation: 'xeno-spin 1s linear infinite' }} />Saving…</>
+                : <>Next <ChevronRight size={14} /></>}
             </button>
           )}
+
+          {/* Final send buttons */}
           {((!agentMode && step === 5) || (agentMode && step === 3)) && (
             <button
               onClick={handleSubmit}
-              disabled={submitting || (!agentMode && !data.messageTemplate.trim()) || (agentFinalCustomerCount !== undefined && agentFinalCustomerCount === 0)}
-              style={nextBtnStyle(isAgent, submitting)}
+              disabled={submitting || (!agentMode && !data.messageTemplate.trim())}
+              style={nextBtnStyle(isAgent, submitting || (!agentMode && !data.messageTemplate.trim()))}
             >
-              {submitting ? <><Loader2 size={13} style={{ animation: 'xeno-spin 1s linear infinite' }} />Sending…</> : <><Send size={13} />Create & Send</>}
+              {submitting
+                ? <><Loader2 size={13} style={{ animation: 'xeno-spin 1s linear infinite' }} />Sending…</>
+                : <><Send size={13} />Create & Send</>}
             </button>
           )}
         </div>
