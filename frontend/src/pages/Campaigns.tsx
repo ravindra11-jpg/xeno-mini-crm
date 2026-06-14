@@ -618,7 +618,7 @@ function SectionHeader({ label, count, sort, onSort }: { label: string; count: n
 }
 
 // ─── Wizard sub-components ────────────────────────────────────────────────────
-function SegmentPickerStep({ segList, segmentId, campaignName, purpose, onSelect }: { segList: Segment[]; segmentId: string; campaignName: string; purpose: string; onSelect: (seg: Segment) => void }) {
+function SegmentPickerStep({ segList, segmentId, onSelect }: { segList: Segment[]; segmentId: string; campaignName: string; purpose: string; onSelect: (seg: Segment) => void }) {
   const [showBuilder, setShowBuilder] = useState(false)
   const [aiPrompt, setAiPrompt]       = useState('')
   const [aiLoading, setAiLoading]     = useState(false)
